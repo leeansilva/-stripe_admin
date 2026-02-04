@@ -4,6 +4,7 @@ import type { NextRequest } from 'next/server';
 /**
  * Middleware para proteger todas las rutas excepto las de API
  * Usa autenticación básica con variables de entorno
+ * Compatible con Edge Runtime de Vercel (se ejecuta automáticamente en Edge)
  */
 export function middleware(request: NextRequest) {
   // Permitir acceso a rutas de API sin autenticación (necesarias para webhooks)
@@ -35,7 +36,8 @@ export function middleware(request: NextRequest) {
 
   if (authHeader) {
     const base64Credentials = authHeader.split(' ')[1];
-    const credentials = Buffer.from(base64Credentials, 'base64').toString('ascii');
+    // Usar atob para decodificar base64 en Edge Runtime (compatible con Vercel)
+    const credentials = atob(base64Credentials);
     const [username, password] = credentials.split(':');
 
     if (username === adminUser && password === adminPassword) {
