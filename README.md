@@ -140,6 +140,7 @@ Stripe cancela automáticamente la suscripción en la fecha calculada usando `su
 - ✅ Las API routes están protegidas (no exponen keys)
 - ✅ El frontend solo llama a endpoints internos
 - ✅ Validación de datos en el servidor
+- ✅ **Autenticación básica** configurada con variables de entorno
 
 ## 📦 Deploy en Vercel
 
@@ -161,15 +162,28 @@ Stripe cancela automáticamente la suscripción en la fecha calculada usando `su
 - La cancelación es automática: Stripe no cobrará después de la fecha calculada
 - Los usuarios pueden cancelar manualmente antes si lo desean desde su cuenta de Stripe
 
-## 🔐 Seguridad
+## 🔐 Autenticación
 
-**⚠️ IMPORTANTE:** El sistema actual NO tiene autenticación. Para producción, se recomienda implementar una de las siguientes opciones:
+**✅ Autenticación básica implementada** usando middleware de Next.js.
 
-1. **Password Protection de Vercel** (Más simple, recomendado para uso interno)
-2. **NextAuth.js** (Más completo, para múltiples usuarios)
-3. **IP Whitelist** (Para ubicaciones fijas)
+### Configuración en Vercel:
 
-Ver el archivo `SEGURIDAD.md` para detalles completos sobre opciones de seguridad y cómo implementarlas.
+1. Ve a **Settings → Environment Variables** en tu proyecto de Vercel
+2. Agrega estas variables:
+   ```
+   ADMIN_USER=tu_usuario
+   ADMIN_PASSWORD=tu_contraseña_segura
+   ```
+3. Redeploy el proyecto
+
+### Alternativa más simple:
+
+También puedes usar **Password Protection de Vercel**:
+1. Settings → Deployment Protection
+2. Habilita "Password Protection"
+3. Ingresa una contraseña
+
+Ver `CONFIGURACION_VERCEL.md` para instrucciones detalladas.
 
 ## 🔄 Próximos Pasos
 
