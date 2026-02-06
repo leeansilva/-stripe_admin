@@ -68,7 +68,7 @@ export async function POST(request: Request) {
       }
     } else if (priceId) {
       // Si no hay precio manual pero hay priceId, usar el precio de Stripe
-      // Obtener información del precio original
+      // El precio elegido es el valor de CADA cuota (no se divide)
       const originalPrice = await stripe.prices.retrieve(priceId);
       
       if (originalPrice.type !== 'recurring' || originalPrice.recurring?.interval !== 'month') {
@@ -78,13 +78,9 @@ export async function POST(request: Request) {
         );
       }
 
-      // Obtener el precio total (unit_amount está en centavos/unidad más pequeña)
-      const totalAmount = originalPrice.unit_amount || 0;
+      // El unit_amount del precio es directamente el valor por cuota
+      amountPerPayment = originalPrice.unit_amount || 0;
       currency = originalPrice.currency.toLowerCase();
-
-      // Calcular el precio por cuota: precio total / cantidad de cuotas
-      // Redondear hacia arriba para evitar números irracionales
-      amountPerPayment = Math.ceil(totalAmount / paymentsCount);
 
       finalProductId = typeof originalPrice.product === 'string' 
         ? originalPrice.product 
