@@ -70,6 +70,17 @@ interface SessionHistory {
   checkoutUrl?: string; // URL del link de pago
 }
 
+/** Cantidad de pagos según el nombre del producto (fijado por producto) */
+function getExpectedPaymentsCount(productName: string): number {
+  if (!productName) return 1;
+  if (productName === 'Developer/Data Engineer - Online mentorship / Sesion 1 - 1') return 1;
+  if (productName === 'Developer/Data Engineer - Online mentorship / Online Course / Curso Online') return 1;
+  if (productName.endsWith(' - 2 Pagos')) return 2;
+  if (productName.endsWith(' - 3 Pagos')) return 3;
+  if (productName.endsWith(' - 4 Pagos')) return 4;
+  return 1;
+}
+
 export default function Home() {
   const [products, setProducts] = useState<Product[]>([]);
   const [prices, setPrices] = useState<Price[]>([]);
@@ -154,6 +165,19 @@ export default function Home() {
       setSelectedPriceId('');
     }
   }, [selectedProductId]);
+
+  // Al cambiar de producto: limpiar link generado (cada link es por producto)
+  useEffect(() => {
+    setGeneratedLink(null);
+  }, [selectedProductId]);
+
+  // Fijar cantidad de pagos según el producto seleccionado
+  useEffect(() => {
+    if (selectedProductId && products.length > 0) {
+      const product = products.find((p) => p.id === selectedProductId);
+      if (product) setPaymentsCount(getExpectedPaymentsCount(product.name));
+    }
+  }, [selectedProductId, products]);
 
   const loadProducts = async () => {
     setLoadingProducts(true);
@@ -257,21 +281,18 @@ export default function Home() {
 
     try {
       const requestBody: any = {
-        // Precio manual = siempre 1 pago; precio Stripe = cantidad elegida
-        paymentsCount: useManualPrice ? 1 : paymentsCount,
+        paymentsCount, // Fijado por el producto (1, 2, 3 o 4)
       };
 
       if (useManualPrice) {
-        // Convertir precio manual a centavos
         const priceInCents = Math.round(parseFloat(manualPrice) * 100);
         requestBody.manualPrice = priceInCents;
         requestBody.currency = currency;
-        // Incluir productId si hay un producto seleccionado
-        if (selectedProductId) {
-          requestBody.productId = selectedProductId;
-        }
+        if (selectedProductId) requestBody.productId = selectedProductId;
+        if (selectedProduct && paymentsCount === 1) requestBody.productName = selectedProduct.name;
       } else {
         requestBody.priceId = selectedPriceId;
+        if (selectedProduct && paymentsCount === 1) requestBody.productName = selectedProduct.name;
       }
 
       const response = await fetch('/api/create-checkout-session', {
@@ -292,7 +313,7 @@ export default function Home() {
         const pricePerPayment = useManualPrice 
           ? Math.round(parseFloat(manualPrice) * 100)
           : (selectedPrice ? selectedPrice.unit_amount : 0);
-        const sessionPaymentsCount = useManualPrice ? 1 : paymentsCount;
+        const sessionPaymentsCount = paymentsCount;
         
         const sessionCurrency = useManualPrice ? currency : (selectedPrice?.currency || 'usd');
         const productName = selectedProduct?.name || 'Pago Manual';
@@ -367,9 +388,8 @@ export default function Home() {
   let displayCurrency = 'usd';
   
   if (useManualPrice && manualPrice) {
-    // Precio manual = valor por cuota, siempre 1 pago
     amountPerPayment = Math.round(parseFloat(manualPrice) * 100);
-    totalAmount = amountPerPayment * 1;
+    totalAmount = amountPerPayment * paymentsCount; // N según producto
     displayCurrency = currency;
   } else if (selectedPrice) {
     // Precio de Stripe = valor de cada cuota (no se divide)
@@ -445,7 +465,7 @@ export default function Home() {
                     {formatPrice(amountPerPayment, displayCurrency)}
                   </StatNumber>
                   <StatHelpText>
-                    {useManualPrice ? '1 pago' : `${paymentsCount} pago${paymentsCount > 1 ? 's' : ''}`} de{' '}
+                    {paymentsCount} pago{paymentsCount > 1 ? 's' : ''} de{' '}
                     {formatPrice(amountPerPayment, displayCurrency)} cada uno
                   </StatHelpText>
                 </Stat>
@@ -612,12 +632,8 @@ export default function Home() {
                   onChange={(e) => {
                     const isManual = e.target.value === 'manual';
                     setUseManualPrice(isManual);
-                    if (isManual) {
-                      setSelectedPriceId('');
-                      setPaymentsCount(1); // Precio manual = 1 solo pago
-                    } else {
-                      setManualPrice('');
-                    }
+                    if (isManual) setSelectedPriceId('');
+                    else setManualPrice('');
                   }}
                   size="lg"
                 >
@@ -697,12 +713,12 @@ export default function Home() {
                           </Text>
                         </HStack>
                         <HStack justify="space-between">
-                          <Text fontWeight="semibold">Total (1 pago):</Text>
+                          <Text fontWeight="semibold">Total ({paymentsCount} cuota{paymentsCount > 1 ? 's' : ''}):</Text>
                           <Text fontSize="lg" fontWeight="bold" color="brand.600">
                             {new Intl.NumberFormat('es-ES', {
                               style: 'currency',
                               currency: currency.toUpperCase(),
-                            }).format(parseFloat(manualPrice) || 0)}
+                            }).format((parseFloat(manualPrice) || 0) * paymentsCount)}
                           </Text>
                         </HStack>
                       </VStack>
@@ -711,30 +727,25 @@ export default function Home() {
                 </VStack>
               )}
 
-              {/* Selector de Cantidad de Pagos (deshabilitado cuando es precio manual) */}
+              {/* Cantidad de Pagos (fijada por producto, no editable) */}
               {(selectedPriceId || useManualPrice) && (
                 <Box>
                   <Text fontWeight="semibold" mb={2}>
                     Cantidad de Pagos
                   </Text>
                   <Select
-                    value={useManualPrice ? 1 : paymentsCount}
-                    onChange={(e) => setPaymentsCount(Number(e.target.value))}
+                    value={paymentsCount}
                     size="lg"
-                    isDisabled={useManualPrice}
+                    isDisabled
                   >
                     <option value={1}>1 pago</option>
                     <option value={2}>2 pagos</option>
                     <option value={3}>3 pagos</option>
                     <option value={4}>4 pagos</option>
-                    <option value={6}>6 pagos</option>
-                    <option value={12}>12 pagos</option>
                   </Select>
-                  {useManualPrice && (
-                    <Text fontSize="sm" color="gray.600" mt={1}>
-                      Con precio manual se usa 1 solo pago.
-                    </Text>
-                  )}
+                  <Text fontSize="sm" color="gray.600" mt={1}>
+                    Definido por el producto seleccionado (no editable).
+                  </Text>
                   {!useManualPrice && selectedPrice && (
                     <Box mt={3} p={4} bg="blue.50" borderRadius="md">
                       <VStack align="stretch" spacing={2}>
@@ -844,6 +855,9 @@ export default function Home() {
           <Card>
             <CardHeader>
               <Heading size="md">Historial Reciente</Heading>
+              <Text fontSize="sm" color="gray.600" fontWeight="normal" mt={1}>
+                Últimos 10 links generados (guardados en este navegador). No es por tiempo.
+              </Text>
             </CardHeader>
             <CardBody>
               <VStack spacing={3} align="stretch">

@@ -103,8 +103,38 @@ export async function POST(request: Request) {
       );
     }
 
-    // Crear un precio temporal para la cuota
-    // Este precio será usado para la suscripción
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+
+    // Un solo pago = pago único (no suscripción)
+    if (paymentsCount === 1) {
+      const productName = body.productName || 'Pago único';
+      const session = await stripe.checkout.sessions.create({
+        mode: 'payment',
+        line_items: [
+          {
+            price_data: {
+              currency,
+              unit_amount: amountPerPayment,
+              product_data: {
+                name: productName,
+              },
+            },
+            quantity: 1,
+          },
+        ],
+        success_url: `${appUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${appUrl}/cancel`,
+      });
+      return NextResponse.json({
+        url: session.url,
+        sessionId: session.id,
+        amountPerPayment,
+        totalAmount: amountPerPayment,
+        currency,
+      });
+    }
+
+    // Varios pagos = suscripción con cancelación automática
     const newPrice = await stripe.prices.create({
       product: finalProductId,
       unit_amount: amountPerPayment,
@@ -115,21 +145,11 @@ export async function POST(request: Request) {
       },
     });
 
-    // Calcular la fecha de cancelación
-    // Fecha actual + cantidad de meses
     const now = new Date();
     const cancelAt = new Date(now);
     cancelAt.setMonth(cancelAt.getMonth() + paymentsCount);
-    
-    // Convertir a timestamp UNIX (Stripe requiere segundos, no milisegundos)
     const cancelAtTimestamp = Math.floor(cancelAt.getTime() / 1000);
 
-    // Obtener la URL de la aplicación
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-
-    // Crear la sesión de Checkout con el nuevo precio (precio por cuota)
-    // Nota: cancel_at no se puede pasar directamente en subscription_data de checkout sessions
-    // Usamos metadata para guardar la información y luego actualizamos la suscripción con webhooks
     const sessionParams = {
       mode: 'subscription' as const,
       line_items: [
