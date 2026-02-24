@@ -33,11 +33,11 @@ import {
   InputLeftElement,
   InputRightElement,
 } from '@chakra-ui/react';
-import { 
-  FiDollarSign, 
-  FiShoppingCart, 
-  FiCalendar, 
-  FiCheckCircle, 
+import {
+  FiDollarSign,
+  FiShoppingCart,
+  FiCalendar,
+  FiCheckCircle,
   FiSearch,
   FiCopy,
   FiExternalLink,
@@ -83,16 +83,13 @@ function getExpectedPaymentsCount(productName: string): number {
 
 export default function Home() {
   const [products, setProducts] = useState<Product[]>([]);
-  const [prices, setPrices] = useState<Price[]>([]);
   const [selectedProductId, setSelectedProductId] = useState<string>('');
-  const [selectedPriceId, setSelectedPriceId] = useState<string>('');
   const [paymentsCount, setPaymentsCount] = useState<number>(1);
-  const [useManualPrice, setUseManualPrice] = useState<boolean>(false);
+  const [useManualPrice, setUseManualPrice] = useState<boolean>(true);
   const [manualPrice, setManualPrice] = useState<string>('');
   const currency = 'usd'; // Siempre USD
   const [loading, setLoading] = useState(false);
   const [loadingProducts, setLoadingProducts] = useState(true);
-  const [loadingPrices, setLoadingPrices] = useState(false);
   const [error, setError] = useState<string>('');
   const [sessionHistory, setSessionHistory] = useState<SessionHistory[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -156,16 +153,6 @@ export default function Home() {
     loadProducts();
   }, []);
 
-  // Cargar precios cuando se selecciona un producto
-  useEffect(() => {
-    if (selectedProductId) {
-      loadPrices(selectedProductId);
-    } else {
-      setPrices([]);
-      setSelectedPriceId('');
-    }
-  }, [selectedProductId]);
-
   // Al cambiar de producto: limpiar link generado (cada link es por producto)
   useEffect(() => {
     setGeneratedLink(null);
@@ -220,55 +207,16 @@ export default function Home() {
     }
   };
 
-  const loadPrices = async (productId: string) => {
-    setLoadingPrices(true);
-    try {
-      const response = await fetch(`/api/prices/${productId}`);
-      const data = await response.json();
-      if (response.ok) {
-        setPrices(data.prices);
-        if (data.prices.length > 0) {
-          setSelectedPriceId(data.prices[0].id);
-          // Si hay precios, asegurar que no esté en modo manual
-          if (useManualPrice) {
-            setUseManualPrice(false);
-          }
-        } else {
-          // Si no hay precios, activar automáticamente el modo precio manual
-          setSelectedPriceId('');
-          setUseManualPrice(true);
-        }
-      } else {
-        setError(data.error || 'Error al cargar precios');
-        // Si hay error, también activar modo manual
-        setUseManualPrice(true);
-      }
-    } catch (err) {
-      setError('Error al conectar con el servidor');
-      // Si hay error de conexión, activar modo manual
-      setUseManualPrice(true);
-    } finally {
-      setLoadingPrices(false);
-    }
-  };
-
   const handleCheckout = async () => {
-    // Validar que haya precio de Stripe o precio manual
-    if (!useManualPrice && !selectedPriceId) {
-      setError('Por favor selecciona un precio de Stripe o ingresa un precio manual');
+    // Validar que haya precio manual
+    if (!manualPrice || parseFloat(manualPrice) <= 0) {
+      setError('Por favor ingresa un precio válido');
       return;
     }
-
-    if (useManualPrice) {
-      if (!manualPrice || parseFloat(manualPrice) <= 0) {
-        setError('Por favor ingresa un precio válido');
-        return;
-      }
-      // Si usa precio manual, requerir que haya un producto seleccionado
-      if (!selectedProductId) {
-        setError('Por favor selecciona un producto cuando uses precio manual');
-        return;
-      }
+    // Requerir que haya un producto seleccionado
+    if (!selectedProductId) {
+      setError('Por favor selecciona un producto');
+      return;
     }
 
     if (paymentsCount < 1) {
@@ -280,19 +228,18 @@ export default function Home() {
     setError('');
 
     try {
+      const selectedProduct = products.find((p) => p.id === selectedProductId);
+      const priceInCents = Math.round(parseFloat(manualPrice) * 100);
+
       const requestBody: any = {
-        paymentsCount, // Fijado por el producto (1, 2, 3 o 4)
+        paymentsCount,
+        manualPrice: priceInCents,
+        currency: currency,
+        productId: selectedProductId,
       };
 
-      if (useManualPrice) {
-        const priceInCents = Math.round(parseFloat(manualPrice) * 100);
-        requestBody.manualPrice = priceInCents;
-        requestBody.currency = currency;
-        if (selectedProductId) requestBody.productId = selectedProductId;
-        if (selectedProduct && paymentsCount === 1) requestBody.productName = selectedProduct.name;
-      } else {
-        requestBody.priceId = selectedPriceId;
-        if (selectedProduct && paymentsCount === 1) requestBody.productName = selectedProduct.name;
+      if (selectedProduct && paymentsCount === 1) {
+        requestBody.productName = selectedProduct.name;
       }
 
       const response = await fetch('/api/create-checkout-session', {
@@ -307,17 +254,11 @@ export default function Home() {
 
       if (response.ok && data.url) {
         // Guardar en historial
-        const selectedPrice = prices.find((p) => p.id === selectedPriceId);
-        const selectedProduct = products.find((p) => p.id === selectedProductId);
-        
-        const pricePerPayment = useManualPrice 
-          ? Math.round(parseFloat(manualPrice) * 100)
-          : (selectedPrice ? selectedPrice.unit_amount : 0);
+        const pricePerPayment = priceInCents;
         const sessionPaymentsCount = paymentsCount;
-        
-        const sessionCurrency = useManualPrice ? currency : (selectedPrice?.currency || 'usd');
+        const sessionCurrency = currency;
         const productName = selectedProduct?.name || 'Pago Manual';
-        
+
         const newSession: SessionHistory = {
           id: data.sessionId || Date.now().toString(),
           productName,
@@ -328,7 +269,7 @@ export default function Home() {
           status: 'pending',
           checkoutUrl: data.url, // Guardar el link
         };
-        
+
         const updatedHistory = [newSession, ...sessionHistory].slice(0, 10); // Mantener solo los últimos 10
         setSessionHistory(updatedHistory);
         localStorage.setItem('stripe_sessions', JSON.stringify(updatedHistory));
@@ -379,25 +320,19 @@ export default function Home() {
     }).format(amount / 100);
   };
 
-  const selectedPrice = prices.find((p) => p.id === selectedPriceId);
   const selectedProduct = products.find((p) => p.id === selectedProductId);
-  
+
   // Calcular precio por cuota
   let amountPerPayment = 0;
   let totalAmount = 0;
   let displayCurrency = 'usd';
-  
-  if (useManualPrice && manualPrice) {
+
+  if (manualPrice) {
     amountPerPayment = Math.round(parseFloat(manualPrice) * 100);
     totalAmount = amountPerPayment * paymentsCount; // N según producto
     displayCurrency = currency;
-  } else if (selectedPrice) {
-    // Precio de Stripe = valor de cada cuota (no se divide)
-    amountPerPayment = selectedPrice.unit_amount;
-    totalAmount = amountPerPayment * paymentsCount;
-    displayCurrency = selectedPrice.currency;
   }
-  
+
   const totalSessions = sessionHistory.length;
 
   // Filtrar productos basado en la búsqueda
@@ -451,7 +386,7 @@ export default function Home() {
             </CardBody>
           </Card>
 
-          {(selectedPrice || useManualPrice) && amountPerPayment > 0 && (
+          {amountPerPayment > 0 && (
             <Card>
               <CardBody>
                 <Stat>
@@ -519,7 +454,6 @@ export default function Home() {
                           // Si hay un producto seleccionado y el usuario empieza a escribir, limpiar la selección
                           if (selectedProduct && e.target.value !== selectedProduct.name) {
                             setSelectedProductId('');
-                            setSelectedPriceId('');
                           }
                           setSearchQuery(e.target.value);
                           setIsSearchOpen(true);
@@ -529,14 +463,13 @@ export default function Home() {
                           // Si hay un producto seleccionado, limpiarlo al hacer focus para permitir búsqueda
                           if (selectedProduct) {
                             setSelectedProductId('');
-                            setSelectedPriceId('');
                             setSearchQuery('');
                           }
                         }}
                         onClick={() => setIsSearchOpen(true)}
                       />
                     </InputGroup>
-                    
+
                     {/* Lista desplegable de resultados */}
                     {isSearchOpen && !selectedProduct && (
                       <Box
@@ -613,7 +546,6 @@ export default function Home() {
                     onClick={() => {
                       setSelectedProductId('');
                       setSearchQuery('');
-                      setSelectedPriceId('');
                       setIsSearchOpen(false);
                     }}
                   >
@@ -622,113 +554,66 @@ export default function Home() {
                 )}
               </Box>
 
-              {/* Opción: Usar precio manual o precio de Stripe */}
-              <Box>
-                <Text fontWeight="semibold" mb={2}>
-                  Tipo de Precio
-                </Text>
-                <Select
-                  value={useManualPrice ? 'manual' : 'stripe'}
-                  onChange={(e) => {
-                    const isManual = e.target.value === 'manual';
-                    setUseManualPrice(isManual);
-                    if (isManual) setSelectedPriceId('');
-                    else setManualPrice('');
-                  }}
-                  size="lg"
-                >
-                  <option value="stripe">Usar precio de Stripe</option>
-                  <option value="manual">Ingresar precio manual</option>
-                </Select>
-              </Box>
-
-              {/* Selector de Precio de Stripe (solo si no usa precio manual) */}
-              {!useManualPrice && selectedProductId && (
+              {/* Campos de Precio Manual */}
+              <VStack spacing={4} align="stretch">
                 <Box>
                   <Text fontWeight="semibold" mb={2}>
-                    Selecciona un Precio de Stripe
+                    Precio por Cuota
                   </Text>
-                  {loadingPrices ? (
-                    <HStack>
-                      <Spinner size="sm" />
-                      <Text>Cargando precios...</Text>
-                    </HStack>
-                  ) : prices.length === 0 ? (
-                    <Box p={4} bg="yellow.50" borderRadius="md" borderWidth="1px" borderColor="yellow.200">
-                      <Text color="yellow.800" fontSize="sm">
-                        Este producto no tiene precios configurados. Usa la opción de precio manual arriba.
-                      </Text>
-                    </Box>
-                  ) : (
-                    <Select
-                      value={selectedPriceId}
-                      onChange={(e) => setSelectedPriceId(e.target.value)}
-                      size="lg"
-                    >
-                      <option value="">Selecciona un precio...</option>
-                      {prices.map((price) => (
-                        <option key={price.id} value={price.id}>
-                          {formatPrice(price.unit_amount, price.currency)} / mes
-                        </option>
-                      ))}
-                    </Select>
-                  )}
+                  <InputGroup size="lg">
+                    <InputLeftElement pointerEvents="none">
+                      <Icon as={FiDollarSign} color="gray.400" />
+                    </InputLeftElement>
+                    <Input
+                      type="text"
+                      placeholder="0.00"
+                      value={manualPrice}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        // Permitir solo números y un punto decimal
+                        if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                          setManualPrice(val);
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                          e.preventDefault();
+                        }
+                      }}
+                    />
+                  </InputGroup>
+                  <Text fontSize="sm" color="gray.600" mt={1}>
+                    Este será el valor de cada cuota (no se divide)
+                  </Text>
                 </Box>
-              )}
-
-              {/* Campos de Precio Manual */}
-              {useManualPrice && (
-                <VStack spacing={4} align="stretch">
-                  <Box>
-                    <Text fontWeight="semibold" mb={2}>
-                      Precio por Cuota
-                    </Text>
-                    <InputGroup size="lg">
-                      <InputLeftElement pointerEvents="none">
-                        <Icon as={FiDollarSign} color="gray.400" />
-                      </InputLeftElement>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="0.00"
-                        value={manualPrice}
-                        onChange={(e) => setManualPrice(e.target.value)}
-                      />
-                    </InputGroup>
-                    <Text fontSize="sm" color="gray.600" mt={1}>
-                      Este será el valor de cada cuota (no se divide)
-                    </Text>
+                {manualPrice && parseFloat(manualPrice) > 0 && (
+                  <Box p={4} bg="blue.50" borderRadius="md">
+                    <VStack align="stretch" spacing={2}>
+                      <HStack justify="space-between">
+                        <Text fontWeight="semibold">Precio por Cuota:</Text>
+                        <Text fontSize="xl" fontWeight="bold" color="brand.600">
+                          {new Intl.NumberFormat('es-ES', {
+                            style: 'currency',
+                            currency: currency.toUpperCase(),
+                          }).format(parseFloat(manualPrice) || 0)}
+                        </Text>
+                      </HStack>
+                      <HStack justify="space-between">
+                        <Text fontWeight="semibold">Total ({paymentsCount} cuota{paymentsCount > 1 ? 's' : ''}):</Text>
+                        <Text fontSize="lg" fontWeight="bold" color="brand.600">
+                          {new Intl.NumberFormat('es-ES', {
+                            style: 'currency',
+                            currency: currency.toUpperCase(),
+                          }).format((parseFloat(manualPrice) || 0) * paymentsCount)}
+                        </Text>
+                      </HStack>
+                    </VStack>
                   </Box>
-                  {manualPrice && parseFloat(manualPrice) > 0 && (
-                    <Box p={4} bg="blue.50" borderRadius="md">
-                      <VStack align="stretch" spacing={2}>
-                        <HStack justify="space-between">
-                          <Text fontWeight="semibold">Precio por Cuota:</Text>
-                          <Text fontSize="xl" fontWeight="bold" color="brand.600">
-                            {new Intl.NumberFormat('es-ES', {
-                              style: 'currency',
-                              currency: currency.toUpperCase(),
-                            }).format(parseFloat(manualPrice) || 0)}
-                          </Text>
-                        </HStack>
-                        <HStack justify="space-between">
-                          <Text fontWeight="semibold">Total ({paymentsCount} cuota{paymentsCount > 1 ? 's' : ''}):</Text>
-                          <Text fontSize="lg" fontWeight="bold" color="brand.600">
-                            {new Intl.NumberFormat('es-ES', {
-                              style: 'currency',
-                              currency: currency.toUpperCase(),
-                            }).format((parseFloat(manualPrice) || 0) * paymentsCount)}
-                          </Text>
-                        </HStack>
-                      </VStack>
-                    </Box>
-                  )}
-                </VStack>
-              )}
+                )}
+              </VStack>
 
               {/* Cantidad de Pagos (fijada por producto, no editable) */}
-              {(selectedPriceId || useManualPrice) && (
+              {selectedProductId && (
                 <Box>
                   <Text fontWeight="semibold" mb={2}>
                     Cantidad de Pagos
@@ -746,33 +631,11 @@ export default function Home() {
                   <Text fontSize="sm" color="gray.600" mt={1}>
                     Definido por el producto seleccionado (no editable).
                   </Text>
-                  {!useManualPrice && selectedPrice && (
-                    <Box mt={3} p={4} bg="blue.50" borderRadius="md">
-                      <VStack align="stretch" spacing={2}>
-                        <HStack justify="space-between">
-                          <Text fontWeight="semibold">Valor por Cuota:</Text>
-                          <Text fontSize="xl" fontWeight="bold" color="brand.600">
-                            {formatPrice(amountPerPayment, selectedPrice.currency)}
-                          </Text>
-                        </HStack>
-                        <HStack justify="space-between">
-                          <Text fontWeight="semibold">Total ({paymentsCount} cuota{paymentsCount > 1 ? 's' : ''}):</Text>
-                          <Text fontSize="lg" fontWeight="bold" color="brand.600">
-                            {formatPrice(totalAmount, selectedPrice.currency)}
-                          </Text>
-                        </HStack>
-                        <Text fontSize="sm" color="gray.600" mt={1}>
-                          {paymentsCount} pago{paymentsCount > 1 ? 's' : ''} de{' '}
-                          {formatPrice(amountPerPayment, selectedPrice.currency)} cada uno
-                        </Text>
-                      </VStack>
-                    </Box>
-                  )}
                 </Box>
               )}
 
               {/* Botón de Pago */}
-              {(selectedPriceId || useManualPrice) && !generatedLink && (
+              {!generatedLink && (
                 <Button
                   colorScheme="brand"
                   size="lg"
@@ -832,7 +695,6 @@ export default function Home() {
                           onClick={() => {
                             setGeneratedLink(null);
                             setSelectedProductId('');
-                            setSelectedPriceId('');
                             setSearchQuery('');
                             setPaymentsCount(1);
                             setUseManualPrice(false);
@@ -871,17 +733,6 @@ export default function Home() {
                   >
                     <HStack justify="space-between" mb={2}>
                       <Text fontWeight="semibold">{session.productName}</Text>
-                      <Badge
-                        colorScheme={
-                          session.status === 'completed'
-                            ? 'green'
-                            : session.status === 'cancelled'
-                            ? 'red'
-                            : 'yellow'
-                        }
-                      >
-                        {session.status}
-                      </Badge>
                     </HStack>
                     <HStack justify="space-between" mb={2}>
                       <Text fontSize="sm" color="gray.600">
