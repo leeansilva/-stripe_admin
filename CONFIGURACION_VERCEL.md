@@ -18,6 +18,12 @@ Ya está implementada en el código. Solo necesitas configurar las variables de 
    ADMIN_PASSWORD=tu_contraseña_segura
    ```
 
+   **Para que las suscripciones tengan límite de ciclos (expiren después de N pagos):**
+   - Configura el **webhook de Stripe** en el Dashboard de Stripe → Developers → Webhooks → Add endpoint.
+   - URL del endpoint: `https://tu-dominio.vercel.app/api/webhooks/stripe`
+   - Eventos: marca al menos `checkout.session.completed`.
+   - Añade la variable de entorno en Vercel: `STRIPE_WEBHOOK_SECRET` con el “Signing secret” del webhook.
+
    **Ejemplo:**
    ```
    ADMIN_USER=admin

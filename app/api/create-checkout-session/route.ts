@@ -103,7 +103,9 @@ export async function POST(request: Request) {
       );
     }
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    // URL base desde la petición: success/cancel apuntan al mismo dominio (Vercel o localhost sin configurar nada)
+    const requestUrl = new URL(request.url);
+    const appUrl = requestUrl.origin;
 
     // Un solo pago = pago único (no suscripción)
     if (paymentsCount === 1) {
@@ -168,6 +170,11 @@ export async function POST(request: Request) {
       },
       success_url: `${appUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${appUrl}/cancel`,
+      // Fallback: si la metadata no se copia a la suscripción, el webhook puede leerla de la sesión
+      metadata: {
+        cancel_at_timestamp: cancelAtTimestamp.toString(),
+        payments_count: paymentsCount.toString(),
+      },
     };
     
     const session = await stripe.checkout.sessions.create(

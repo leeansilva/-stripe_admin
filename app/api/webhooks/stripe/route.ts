@@ -43,7 +43,7 @@ export async function POST(request: Request) {
 
   // Procesar el evento
   try {
-    // Cuando se completa el checkout, actualizar la suscripción con cancel_at
+    // Cuando se completa el checkout, marcar la suscripción con cancel_at (límite de ciclos)
     if (event.type === 'checkout.session.completed') {
       const session = event.data.object as Stripe.Checkout.Session;
 
@@ -52,19 +52,23 @@ export async function POST(request: Request) {
           ? session.subscription
           : session.subscription.id;
 
-        // Obtener la suscripción
         const subscription = await stripe.subscriptions.retrieve(subscriptionId);
 
-        // Verificar si tiene metadata con cancel_at_timestamp
+        // cancel_at_timestamp: en metadata de la suscripción o, por fallback, en metadata de la sesión
+        let cancelAtTimestamp: number | null = null;
         if (subscription.metadata?.cancel_at_timestamp) {
-          const cancelAtTimestamp = parseInt(subscription.metadata.cancel_at_timestamp);
+          cancelAtTimestamp = parseInt(subscription.metadata.cancel_at_timestamp, 10);
+        } else if (session.metadata?.cancel_at_timestamp) {
+          cancelAtTimestamp = parseInt(session.metadata.cancel_at_timestamp, 10);
+        }
 
-          // Actualizar la suscripción con cancel_at
+        if (cancelAtTimestamp && !isNaN(cancelAtTimestamp)) {
           await stripe.subscriptions.update(subscriptionId, {
             cancel_at: cancelAtTimestamp,
           });
-
-          console.log(`Suscripción ${subscriptionId} configurada para cancelarse en ${new Date(cancelAtTimestamp * 1000).toISOString()}`);
+          console.log(`Suscripción ${subscriptionId} limitada: se cancelará en ${new Date(cancelAtTimestamp * 1000).toISOString()}`);
+        } else {
+          console.warn(`Suscripción ${subscriptionId} sin cancel_at_timestamp en metadata; revisar webhook y subscription_data.`);
         }
       }
     }
