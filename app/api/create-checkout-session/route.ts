@@ -51,8 +51,8 @@ export async function POST(request: Request) {
       // Obtener el productId: primero de priceId, luego del parámetro productId
       if (priceId) {
         const originalPrice = await stripe.prices.retrieve(priceId);
-        finalProductId = typeof originalPrice.product === 'string' 
-          ? originalPrice.product 
+        finalProductId = typeof originalPrice.product === 'string'
+          ? originalPrice.product
           : originalPrice.product.id;
       } else if (requestProductId) {
         // Usar el productId proporcionado
@@ -70,7 +70,7 @@ export async function POST(request: Request) {
       // Si no hay precio manual pero hay priceId, usar el precio de Stripe
       // El precio elegido es el valor de CADA cuota (no se divide)
       const originalPrice = await stripe.prices.retrieve(priceId);
-      
+
       if (originalPrice.type !== 'recurring' || originalPrice.recurring?.interval !== 'month') {
         return NextResponse.json(
           { error: 'El precio debe ser una suscripción mensual' },
@@ -82,8 +82,8 @@ export async function POST(request: Request) {
       amountPerPayment = originalPrice.unit_amount || 0;
       currency = originalPrice.currency.toLowerCase();
 
-      finalProductId = typeof originalPrice.product === 'string' 
-        ? originalPrice.product 
+      finalProductId = typeof originalPrice.product === 'string'
+        ? originalPrice.product
         : originalPrice.product.id;
     } else {
       return NextResponse.json(
@@ -96,8 +96,8 @@ export async function POST(request: Request) {
     const minimumAmount = getMinimumAmount(currency);
     if (amountPerPayment < minimumAmount) {
       return NextResponse.json(
-        { 
-          error: `El monto por cuota (${(amountPerPayment / 100).toFixed(2)} ${currency.toUpperCase()}) es menor al mínimo permitido por Stripe (${(minimumAmount / 100).toFixed(2)} ${currency.toUpperCase()}).` 
+        {
+          error: `El monto por cuota (${(amountPerPayment / 100).toFixed(2)} ${currency.toUpperCase()}) es menor al mínimo permitido por Stripe (${(minimumAmount / 100).toFixed(2)} ${currency.toUpperCase()}).`
         },
         { status: 400 }
       );
@@ -176,7 +176,7 @@ export async function POST(request: Request) {
         payments_count: paymentsCount.toString(),
       },
     };
-    
+
     const session = await stripe.checkout.sessions.create(
       sessionParams as Stripe.Checkout.SessionCreateParams
     );
@@ -190,7 +190,7 @@ export async function POST(request: Request) {
     });
   } catch (error: any) {
     console.error('Error al crear sesión de checkout:', error);
-    
+
     // Manejar errores específicos de Stripe
     if (error.type === 'StripeInvalidRequestError') {
       return NextResponse.json(

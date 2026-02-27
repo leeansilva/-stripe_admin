@@ -52,23 +52,30 @@ export async function POST(request: Request) {
           ? session.subscription
           : session.subscription.id;
 
+        console.log(`Procesando sesión de suscripción: ${session.id}, Suscripción: ${subscriptionId}`);
+
         const subscription = await stripe.subscriptions.retrieve(subscriptionId);
 
         // cancel_at_timestamp: en metadata de la suscripción o, por fallback, en metadata de la sesión
         let cancelAtTimestamp: number | null = null;
         if (subscription.metadata?.cancel_at_timestamp) {
           cancelAtTimestamp = parseInt(subscription.metadata.cancel_at_timestamp, 10);
+          console.log(`Timestamp encontrado en suscripción: ${cancelAtTimestamp}`);
         } else if (session.metadata?.cancel_at_timestamp) {
           cancelAtTimestamp = parseInt(session.metadata.cancel_at_timestamp, 10);
+          console.log(`Timestamp encontrado en sesión: ${cancelAtTimestamp}`);
         }
 
         if (cancelAtTimestamp && !isNaN(cancelAtTimestamp)) {
+          console.log(`Actualizando suscripción ${subscriptionId} con cancel_at: ${cancelAtTimestamp} (${new Date(cancelAtTimestamp * 1000).toISOString()})`);
           await stripe.subscriptions.update(subscriptionId, {
             cancel_at: cancelAtTimestamp,
           });
-          console.log(`Suscripción ${subscriptionId} limitada: se cancelará en ${new Date(cancelAtTimestamp * 1000).toISOString()}`);
+          console.log(`✅ Suscripción ${subscriptionId} limitada correctamente.`);
         } else {
-          console.warn(`Suscripción ${subscriptionId} sin cancel_at_timestamp en metadata; revisar webhook y subscription_data.`);
+          console.warn(`⚠️ Suscripción ${subscriptionId} no se pudo limitar: no se encontró cancel_at_timestamp en metadata.`);
+          console.log('Metadata suscripción:', JSON.stringify(subscription.metadata));
+          console.log('Metadata sesión:', JSON.stringify(session.metadata));
         }
       }
     }

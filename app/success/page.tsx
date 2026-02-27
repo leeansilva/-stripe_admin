@@ -26,19 +26,46 @@ function SuccessContent() {
   const searchParams = useSearchParams();
   const sessionId = searchParams.get('session_id');
   const [loading, setLoading] = useState(true);
+  const [finalizing, setFinalizing] = useState(false);
+  const [finalized, setFinalized] = useState(false);
+  const [finalizedError, setFinalizedError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Simular carga
-    const timer = setTimeout(() => setLoading(false), 1000);
-    return () => clearTimeout(timer);
-  }, []);
+    if (sessionId) {
+      finalizeSession(sessionId);
+    } else {
+      setLoading(false);
+    }
+  }, [sessionId]);
 
-  if (loading) {
+  const finalizeSession = async (sid: string) => {
+    setFinalizing(true);
+    try {
+      const response = await fetch('/api/finalize-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: sid }),
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setFinalized(true);
+      } else {
+        setFinalizedError(data.error || 'Error al limitar la suscripción');
+      }
+    } catch (err) {
+      setFinalizedError('Error de conexión al procesar la sesión');
+    } finally {
+      setFinalizing(false);
+      setLoading(false);
+    }
+  };
+
+  if (loading || finalizing) {
     return (
       <Container maxW="md" py={20}>
         <VStack spacing={4}>
           <Spinner size="xl" color="brand.500" />
-          <Text>Verificando pago...</Text>
+          <Text>{finalizing ? 'Configurando límite de pagos...' : 'Verificando pago...'}</Text>
         </VStack>
       </Container>
     );
@@ -60,6 +87,27 @@ function SuccessContent() {
                 </Text>
               </Box>
 
+              {finalized && (
+                <Alert status="success" borderRadius="md">
+                  <AlertIcon />
+                  <AlertDescription fontSize="sm">
+                    Límite de pagos configurado exitosamente.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {finalizedError && (
+                <Alert status="warning" borderRadius="md">
+                  <AlertIcon />
+                  <Box>
+                    <AlertTitle fontSize="sm">Nota sobre la duración</AlertTitle>
+                    <AlertDescription fontSize="xs">
+                      {finalizedError}. Por favor contacta a soporte para verificar el límite de pagos.
+                    </AlertDescription>
+                  </Box>
+                </Alert>
+              )}
+
               {sessionId && (
                 <Alert status="info" borderRadius="md">
                   <AlertIcon />
@@ -77,10 +125,12 @@ function SuccessContent() {
                   Recibirás un email de confirmación de Stripe con los detalles
                   de tu suscripción.
                 </Text>
-                <Text fontSize="sm" color="gray.600">
-                  La suscripción se cancelará automáticamente después de
-                  completar todos los pagos configurados.
-                </Text>
+                {finalized && (
+                  <Text fontSize="sm" color="green.600" fontWeight="semibold">
+                    Confirmado: La suscripción se cancelará automáticamente después de
+                    completar todos los pagos configurados.
+                  </Text>
+                )}
               </VStack>
 
               <Link href="/" style={{ width: '100%' }}>
